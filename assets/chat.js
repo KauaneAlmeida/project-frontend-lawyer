@@ -49,6 +49,37 @@
     mroot.scrollTop = mroot.scrollHeight;
   }
 
+  // mostra "digitando" e só depois resposta real
+  function botReply(message){
+    const messagesContainer = document.getElementById('chat-messages');
+
+    // adiciona indicador
+    const typing = document.createElement('div');
+    typing.classList.add('message', 'bot');
+    typing.innerHTML = `
+      <img src="./assets/bot.png" class="avatar" alt="bot">
+      <div class="bubble typing-indicator">
+        <span></span><span></span><span></span>
+      </div>
+    `;
+    messagesContainer.appendChild(typing);
+    messagesContainer.scrollTop = messagesContainer.scrollHeight;
+
+    // delay 2s depois troca pelo texto real
+    setTimeout(() => {
+      typing.remove();
+
+      const botMessage = document.createElement('div');
+      botMessage.classList.add('message', 'bot');
+      botMessage.innerHTML = `
+        <img src="./assets/bot.png" class="avatar" alt="bot">
+        <div class="bubble">${message}</div>
+      `;
+      messagesContainer.appendChild(botMessage);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
+    }, 2000);
+  }
+
   function setSessionId(id){ try{ localStorage.setItem('chat_session_id', id);}catch(e){} }
   function getSessionId(){ try{ return localStorage.getItem('chat_session_id'); }catch(e){ return null; } }
 
@@ -64,9 +95,7 @@
 
     if(!API_BASE_URL){
       // mock: responde local sem backend
-      setTimeout(function(){
-        addMessage("🤖 (mock) Resposta simulada para: " + text, 'bot');
-      }, 800);
+      botReply("🤖 (mock) Resposta simulada para: " + text);
       return;
     }
 
@@ -80,13 +109,11 @@
       var data = await res.json();
       if(data.session_id) setSessionId(data.session_id);
       var botMsg = data.response || data.reply || data.question || '🤔 O bot não respondeu.';
-      addMessage(botMsg, 'bot');
+      botReply(botMsg);
     } catch(err) {
       console.warn('Fetch fail, using mock, error:', err);
       // fallback mock so UI still works
-      setTimeout(function(){
-        addMessage("⚠️ (fallback) Não consegui falar com o backend — resposta mock: " + text, 'bot');
-      }, 700);
+      botReply("⚠️ (fallback) Não consegui falar com o backend — resposta mock: " + text);
     }
   }
 
@@ -98,7 +125,7 @@
       if(!r.ok) return;
       var d = await r.json();
       if(d.session_id) setSessionId(d.session_id);
-      if(d.question) addMessage(d.question,'bot');
+      if(d.question) botReply(d.question);
     }catch(e){ /* ignore */ }
   }
 
@@ -107,12 +134,14 @@
     mount();
     tryStart();
   });
-  
+
   // botão para abrir/fechar chat
   var launcher = document.getElementById('chat-launcher');
-  launcher.addEventListener('click', function(){
-    document.getElementById('chat-root').classList.toggle('active');
-  });
+  if(launcher){
+    launcher.addEventListener('click', function(){
+      document.getElementById('chat-root').classList.toggle('active');
+    });
+  }
 
   // expose function to set backend dynamically (útil)
   window.ChatWidget = {
