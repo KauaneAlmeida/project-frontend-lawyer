@@ -106,7 +106,7 @@
   overflow-y: auto; 
   display: flex; 
   flex-direction: column; 
-  gap: 16px;
+  gap: 20px; /* 🔥 aumentei o espaço entre mensagens */
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.02) 0%, rgba(0, 0, 0, 0.1) 100%);
   scrollbar-width: thin;
   scrollbar-color: rgba(255, 255, 255, 0.2) transparent;
@@ -131,8 +131,9 @@
 
 .message { 
   display: flex; 
-  gap: 12px; 
+  gap: 10px; /* 🔥 espaço entre avatar e bolha */
   align-items: flex-end;
+  margin-bottom: 6px; /* 🔥 garante respiro extra entre mensagens */
   animation: messageSlideIn 0.4s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
@@ -156,8 +157,10 @@
   border-radius: 18px; 
   max-width: 75%; 
   font-size: 14px; 
-  line-height: 1.4;
+  line-height: 1.5; /* 🔥 aumenta legibilidade */
   word-wrap: break-word;
+  word-break: break-word; /* 🔥 corrige quebra de palavras longas */
+  white-space: pre-line;  /* 🔥 respeita quebras de linha */
   position: relative;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
 }
@@ -167,6 +170,7 @@
   color: #ffffff; 
   border-bottom-right-radius: 6px;
   box-shadow: 0 4px 16px rgba(138, 43, 226, 0.3);
+  margin-left: 40px; /* 🔥 evita que encoste na borda esquerda */
 }
 
 .message.bot .bubble { 
@@ -174,6 +178,7 @@
   color: #e8eaed; 
   border-bottom-left-radius: 6px;
   border: 1px solid rgba(255, 255, 255, 0.08);
+  margin-right: 40px; /* 🔥 evita que encoste na borda direita */
 }
 
 /* Primeira mensagem do bot em destaque */
