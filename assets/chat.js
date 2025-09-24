@@ -13,7 +13,7 @@
   var API_BASE_URL = (thisScript && thisScript.getAttribute('data-api')) 
                      || (new URLSearchParams(window.location.search).get('api')) 
                      || localStorage.getItem('backend_url') 
-                     || 'http://localhost:8000'; // fallback para desenvolvimento
+                     || 'https://law-firm-backend-936902782519-936902782519.us-central1.run.app'; // fallback para desenvolvimento
 
   // SEU NÚMERO COMERCIAL DO WHATSAPP (ALTERE AQUI)
   var COMMERCIAL_WHATSAPP = "5511918368812"; // ⚠️ SUBSTITUA PELO SEU NÚMERO
