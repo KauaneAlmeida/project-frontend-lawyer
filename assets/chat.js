@@ -1,4 +1,4 @@
-// chat.js - Sistema completo de Chat + Integração WhatsApp
+// chat.js - Sistema completo de Chat + Integração WhatsApp CORRIGIDO
 (function(){
   // ============================================================================
   // CONFIGURAÇÃO E UTILITÁRIOS
@@ -10,13 +10,22 @@
     return s[s.length-1]; 
   })();
   
+  // CORRIGIDO: URL do backend para produção
   var API_BASE_URL = (thisScript && thisScript.getAttribute('data-api')) 
                      || (new URLSearchParams(window.location.search).get('api')) 
                      || localStorage.getItem('backend_url') 
-                     || 'https://law-firm-backend-936902782519-936902782519.us-central1.run.app'; // fallback para desenvolvimento
+                     || 'https://law-firm-backend-936902782519-936902782519.us-central1.run.app'; // URL correta
 
   // SEU NÚMERO COMERCIAL DO WHATSAPP (ALTERE AQUI)
   var COMMERCIAL_WHATSAPP = "5511918368812"; // ⚠️ SUBSTITUA PELO SEU NÚMERO
+
+  // Estado do chat para controlar fluxos
+  var chatState = {
+    isCompleted: false,
+    userData: {},
+    sessionId: null,
+    flowType: null // 'landing_chat' ou 'whatsapp_button'
+  };
 
   // ============================================================================
   // SISTEMA DE CHAT
@@ -39,6 +48,7 @@
           <input id="chat-input" placeholder="Digite sua mensagem... ⚖️" aria-label="Mensagem"/>
           <button id="chat-send">Enviar</button>
         </div>
+
       </div>
     `;
     
@@ -49,7 +59,7 @@
     });
     
     // Mensagem inicial
-    addChatMessage("Olá! Bem-vindo — pronto pra conversar?", 'bot');
+    addChatMessage("Olá! Bem-vindo ao m.lima Advocacia. Como posso ajudá-lo?", 'bot');
   }
 
   // Adiciona mensagem na interface do chat
@@ -64,6 +74,10 @@
     avatar.className = 'avatar';
     avatar.src = sender === 'user' ? './assets/user.png' : './assets/bot.png';
     avatar.alt = sender;
+    avatar.onerror = function() {
+      // Fallback se imagens não existirem
+      this.style.display = 'none';
+    };
 
     var bubble = document.createElement('div');
     bubble.className = 'bubble';
@@ -90,7 +104,7 @@
     const typingDiv = document.createElement('div');
     typingDiv.classList.add('message', 'bot', 'typing-message');
     typingDiv.innerHTML = `
-      <img src="./assets/bot.png" class="avatar" alt="bot">
+      <div class="avatar-placeholder"></div>
       <div class="bubble typing-indicator">
         <span></span><span></span><span></span>
       </div>
@@ -102,16 +116,99 @@
     setTimeout(() => {
       typingDiv.remove();
       addChatMessage(message, 'bot');
+      
+      // Verificar se o chat foi completado
+      checkChatCompletion(message);
     }, 2000);
+  }
+
+  // Verifica se o chat foi completado baseado na resposta
+  function checkChatCompletion(botMessage) {
+    // Indicadores de que o fluxo foi completado
+    var completionIndicators = [
+      'nossa equipe entrará em contato',
+      'advogado entrará em contato', 
+      'você está em excelentes mãos',
+      'obrigado pelas informações',
+      'seus dados foram registrados',
+      'nossa equipe foi notificada'
+    ];
+    
+    var isCompleted = completionIndicators.some(function(indicator) {
+      return botMessage.toLowerCase().includes(indicator);
+    });
+    
+    if (isCompleted && !chatState.isCompleted) {
+      console.log('🎯 Chat completado - dados sendo enviados automaticamente para WhatsApp');
+      chatState.isCompleted = true;
+      chatState.flowType = 'landing_chat';
+      
+      // Processar automaticamente para WhatsApp (sem botão)
+      setTimeout(function() {
+        handleChatCompletionWhatsApp();
+      }, 1000);
+    }
+  }
+
+  // Processa conclusão do chat e autorização WhatsApp AUTOMATICAMENTE
+  function handleChatCompletionWhatsApp() {
+    console.log('🚀 Chat completado - processando automaticamente para WhatsApp...');
+    
+    // Extrair dados do usuário da sessão atual
+    var sessionData = getChatSessionData();
+    
+    // Preparar dados para autorização WhatsApp
+    var whatsappAuthData = {
+      name: sessionData.name || sessionData.identification || '',
+      area: sessionData.area || sessionData.area_qualification || '',
+      situation: sessionData.case_details || sessionData.situation || '',
+      phone: sessionData.phone || '',
+      email: sessionData.email || ''
+    };
+    
+    console.log('📋 Dados extraídos para WhatsApp:', whatsappAuthData);
+    
+    // Autorizar sessão WhatsApp com dados do chat completado
+    // O bot enviará mensagem diretamente para o WhatsApp do usuário
+    authorizeWhatsAppSession('landing_chat', whatsappAuthData);
+  }
+
+  // Obtém dados da sessão do chat
+  function getChatSessionData() {
+    try {
+      var sessionId = getChatSessionId();
+      var storedData = localStorage.getItem('chat_session_data_' + sessionId);
+      return storedData ? JSON.parse(storedData) : chatState.userData;
+    } catch (e) {
+      return chatState.userData;
+    }
+  }
+
+  // Salva dados da sessão do chat
+  function saveChatSessionData(data) {
+    try {
+      var sessionId = getChatSessionId();
+      chatState.userData = { ...chatState.userData, ...data };
+      localStorage.setItem('chat_session_data_' + sessionId, JSON.stringify(chatState.userData));
+    } catch (e) {
+      console.warn('Não foi possível salvar dados da sessão:', e);
+    }
   }
 
   // Gerenciamento de sessão do chat
   function setChatSessionId(id){ 
-    try{ localStorage.setItem('chat_session_id', id); }catch(e){} 
+    try{ 
+      localStorage.setItem('chat_session_id', id);
+      chatState.sessionId = id;
+    }catch(e){} 
   }
   
   function getChatSessionId(){ 
-    try{ return localStorage.getItem('chat_session_id'); }catch(e){ return null; } 
+    try{ 
+      return chatState.sessionId || localStorage.getItem('chat_session_id'); 
+    }catch(e){ 
+      return null; 
+    } 
   }
 
   // Envio de mensagens do chat
@@ -123,9 +220,10 @@
     addChatMessage(text, 'user');
     input.value = '';
 
+    var sessionId = getChatSessionId() || ('web_' + Date.now());
     var payload = { 
       message: text, 
-      session_id: getChatSessionId() || ('web_' + Date.now()) 
+      session_id: sessionId
     };
 
     try {
@@ -138,7 +236,16 @@
       if(!response.ok) throw new Error('Response not ok: ' + response.status);
       
       var data = await response.json();
-      if(data.session_id) setChatSessionId(data.session_id);
+      
+      // Atualizar session ID se necessário
+      if(data.session_id) {
+        setChatSessionId(data.session_id);
+      }
+      
+      // Extrair e salvar dados do lead se disponível
+      if(data.lead_data) {
+        saveChatSessionData(data.lead_data);
+      }
       
       var botMessage = data.response || data.reply || data.question || '🤔 O bot não respondeu.';
       showBotTypingAndReply(botMessage);
@@ -174,15 +281,18 @@
 
   // Função principal para autorizar sessão WhatsApp e abrir direto
   async function authorizeWhatsAppSession(source, userData = {}) {
-    console.log('🚀 Iniciando autorização WhatsApp...', { source });
+    console.log('🚀 Iniciando autorização WhatsApp...', { source, userData });
     
     // Gerar session_id único para WhatsApp
     var sessionId = 'whatsapp_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
     
+    // CORRIGIDO: phone_number pode ser null para fluxo landing_chat
+    var phoneNumber = userData.phone || null;
+    
     // Preparar dados completos para autorização
     var requestData = {
       session_id: sessionId,
-      phone_number: null, // Será capturado pelo webhook quando usuário enviar mensagem
+      phone_number: phoneNumber,
       source: source,
       user_data: {
         ...userData,
@@ -194,9 +304,9 @@
     };
 
     try {
-      console.log('📡 Enviando pré-autorização...', requestData);
+      console.log('📡 Enviando autorização WhatsApp...', requestData);
       
-      // Chamar API de pré-autorização (registra a intenção)
+      // CORRIGIDO: Usar endpoint correto
       var response = await fetch(API_BASE_URL + '/api/v1/whatsapp/authorize', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -205,9 +315,9 @@
       
       if (response.ok) {
         var data = await response.json();
-        console.log('✅ Pré-autorização realizada:', data);
+        console.log('✅ Autorização WhatsApp realizada:', data);
         
-        // Abrir WhatsApp com mensagem personalizada baseada no contexto
+        // Abrir WhatsApp com mensagem baseada no fluxo
         var message = generateWhatsAppMessage(userData, source);
         var whatsappUrl = 'https://wa.me/' + COMMERCIAL_WHATSAPP + '?text=' + encodeURIComponent(message);
         
@@ -217,11 +327,11 @@
         return true;
         
       } else {
-        throw new Error('Pré-autorização falhou: ' + response.status);
+        throw new Error('Autorização falhou: ' + response.status);
       }
       
     } catch (error) {
-      console.error('❌ Erro na pré-autorização, abrindo WhatsApp direto:', error);
+      console.error('❌ Erro na autorização, abrindo WhatsApp direto:', error);
       
       // Fallback: abrir WhatsApp sem autorização prévia
       var fallbackMessage = generateWhatsAppMessage(userData, source);
@@ -234,25 +344,18 @@
     }
   }
 
-  // Gera mensagem simples - o fluxo do bot fará as perguntas
+  // CORRIGIDO: Gera mensagem baseada no tipo de fluxo
   function generateWhatsAppMessage(userData, source) {
-    // Mensagem simples - o bot do WhatsApp fará as perguntas específicas
-    return "Olá! Vim do site m.lima e gostaria de falar com um advogado.";
-  }
-
-  // Configuração do botão WhatsApp flutuante
-  function getWhatsAppButtonsConfig() {
-    return [
-      // Apenas botão flutuante
-      { 
-        selector: '[data-testid="floating-whatsapp-button"]', 
-        source: 'floating_button',
-        userData: {
-          origem: 'Botão Flutuante',
-          site: 'm.lima'
-        }
-      }
-    ];
+    if (source === 'landing_chat' && userData.name) {
+      // Fluxo: Chat completado na landing
+      return `Olá! Sou ${userData.name}, completei o chat no site m.lima sobre ${userData.area || 'meu caso jurídico'} e gostaria de continuar o atendimento.`;
+    } else if (source === 'floating_button') {
+      // Fluxo: Botão WhatsApp direto
+      return "Olá! Vim do site m.lima e gostaria de falar com um advogado.";
+    } else {
+      // Fallback
+      return "Olá! Vim do site m.lima e preciso de orientação jurídica.";
+    }
   }
 
   // Intercepta apenas o botão flutuante do WhatsApp
@@ -282,8 +385,8 @@
         
         console.log('🔥 Botão WhatsApp flutuante clicado!');
         
-        // Fazer pré-autorização e abrir WhatsApp
-        authorizeWhatsAppSession(buttonConfig.source, buttonConfig.userData);
+        // CORRIGIDO: Usar source correto
+        authorizeWhatsAppSession('whatsapp_button', buttonConfig.userData);
       });
       
       console.log('✅ Botão WhatsApp flutuante configurado com sucesso!');
@@ -346,13 +449,13 @@
     console.log('🚀 Inicializando Chat + WhatsApp Integration...');
     console.log('🔧 Backend URL:', API_BASE_URL);
     console.log('📱 WhatsApp Comercial:', COMMERCIAL_WHATSAPP);
-    console.log('🎯 Focado apenas no botão flutuante WhatsApp');
+    console.log('🎯 Fluxos: Chat completado → WhatsApp | Botão flutuante → WhatsApp');
     
     // Inicializar chat
     mountChatUI();
     initializeChatConversation();
     
-    // Configurar integração WhatsApp (apenas botão flutuante)
+    // Configurar integração WhatsApp
     setTimeout(function() {
       interceptWhatsAppButtons();
       setupWhatsAppObserver();
@@ -394,7 +497,16 @@
     addMessage: addChatMessage,
     clearSession: function() {
       localStorage.removeItem('chat_session_id');
+      chatState.isCompleted = false;
+      chatState.userData = {};
       console.log('🧹 Sessão do chat limpa');
+    },
+    completeChat: function(userData) {
+      console.log('🎯 Forçando conclusão do chat...');
+      handleChatCompletionWhatsApp();
+    },
+    getChatState: function() {
+      return chatState;
     }
   };
 
@@ -420,6 +532,18 @@
     openWhatsApp: function(source, userData) {
       console.log('🔄 Abrindo WhatsApp manualmente...');
       authorizeWhatsAppSession(source || 'manual', userData || {});
+    },
+    // NOVO: Teste do fluxo landing_chat
+    testLandingChatFlow: function() {
+      console.log('🧪 Testando fluxo landing_chat...');
+      var testData = {
+        name: 'João Teste',
+        area: 'Direito Penal',
+        situation: 'Preciso de orientação sobre processo criminal',
+        phone: '11999999999',
+        email: 'joao@teste.com'
+      };
+      authorizeWhatsAppSession('landing_chat', testData);
     }
   };
 
