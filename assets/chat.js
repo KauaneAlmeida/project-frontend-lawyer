@@ -662,14 +662,106 @@
       try {
         if (!this.sessionId) {
           await this.startInitialConversation();
+          this.hideTyping();
           return;
         }
         
-        const response = await this.apiService.sendMessage(this.sessionId, message);
+        // Tentar usar API primeiro
+        if (this.sessionId.startsWith('offline_') || this.sessionId.startsWith('local_')) {
+          // Modo offline - processar localmente
+          this.hideTyping();
+          this.processMessageLocally(message);
+        } else {
+          // Tentar API
+          try {
+            const response = await this.apiService.sendMessage(this.sessionId, message);
+            this.hideTyping();
+            
+            if (response.response) {
+              this.addMessage({
+                type: 'bot',
+                text: response.response,
+                timestamp: new Date()
+              });
+            }
+            
+            this.updateConversationState(response);
+            
+            // Só redirecionar para WhatsApp quando explicitamente solicitado
+            if (response.redirect_to_whatsapp || response.phone_collected) {
+              setTimeout(() => {
+                this.handlePhoneCollected(response);
+              }, 1000);
+            }
+          } catch (apiError) {
+            console.warn('API falhou, processando localmente:', apiError);
+            this.hideTyping();
+            this.processMessageLocally(message);
+          }
+        }
         
+      } catch (error) {
+        console.error('Erro ao enviar mensagem:', error);
         this.hideTyping();
-        
-        if (response.response) {
+        this.processMessageLocally(message);
+      }
+    }
+
+    processMessageLocally(message) {
+      const step = this.conversationState.step;
+      let botResponse = '';
+      
+      switch (step) {
+        case 'name':
+          this.conversationState.userData.name = message;
+          this.conversationState.step = 'phone';
+          botResponse = `Prazer em conhecê-lo, ${message}! Para que eu possa te conectar com um advogado especializado, preciso do seu telefone com WhatsApp. Qual é o seu número?`;
+          break;
+          
+        case 'phone':
+          this.conversationState.userData.phone = message;
+          this.conversationState.step = 'legal_area';
+          botResponse = 'Perfeito! Agora me conte: qual é a área jurídica do seu caso? (Ex: Direito Trabalhista, Família, Criminal, Cível, etc.)';
+          break;
+          
+        case 'legal_area':
+          this.conversationState.userData.legal_area = message;
+          this.conversationState.step = 'case_description';
+          botResponse = 'Entendi. Agora, pode me contar brevemente sobre seu caso? Isso me ajudará a encontrar o advogado mais adequado para você.';
+          break;
+          
+        case 'case_description':
+          this.conversationState.userData.case_description = message;
+          this.conversationState.step = 'completed';
+          botResponse = `Obrigado pelas informações, ${this.conversationState.userData.name}! Com base no que você me contou sobre ${this.conversationState.userData.legal_area}, vou te conectar com um advogado especializado. Clique no botão abaixo para falar diretamente no WhatsApp:`;
+          
+          // Adicionar botão de WhatsApp após a mensagem
+          setTimeout(() => {
+            this.addWhatsAppButton();
+          }, 1000);
+          break;
+          
+        default:
+          botResponse = 'Como posso te ajudar? Estou aqui para te conectar com o advogado ideal para seu caso.';
+          break;
+      }
+      
+      if (botResponse) {
+        this.addMessage({
+          type: 'bot',
+          text: botResponse,
+          timestamp: new Date()
+        });
+      }
+    }
+
+    addWhatsAppButton() {
+      const messagesContainer = document.getElementById('chat-messages');
+      if (!messagesContainer) return;
+      
+      const buttonMessage = document.createElement('div');
+      buttonMessage.className = 'message bot';
+      buttonMessage.innerHTML = `
           this.addMessage({
             type: 'bot',
             text: response.response,
