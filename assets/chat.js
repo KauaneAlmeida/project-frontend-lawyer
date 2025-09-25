@@ -163,9 +163,58 @@
     addMessage(message, 'user');
     elements.input.value = '';
 
-    // Apenas envia a mensagem - o back-end cuida das respostas
+    // Send to backend
+    sendToBackend(message);
   }
 
+  // Send message to backend
+  async function sendToBackend(message) {
+    try {
+      showTypingIndicator();
+      
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          message: message,
+          timestamp: Date.now()
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`);
+      }
+
+      const data = await response.json();
+      
+      // Hide typing indicator
+      hideTypingIndicator();
+      
+      // Add bot response
+      if (data.message) {
+        addMessage(data.message, 'bot');
+      }
+      
+      chatState.retryCount = 0; // Reset retry count on success
+      
+    } catch (error) {
+      console.error('Error sending message to backend:', error);
+      hideTypingIndicator();
+      
+      // Retry logic
+      if (chatState.retryCount < CONFIG.maxRetries) {
+        chatState.retryCount++;
+        setTimeout(() => {
+          sendToBackend(message);
+        }, 2000 * chatState.retryCount); // Exponential backoff
+      } else {
+        addMessage('Desculpe, não foi possível conectar com nosso sistema no momento. Tente novamente em alguns instantes.', 'bot');
+        chatState.retryCount = 0;
+      }
+    }
+  }
   // Add message to chat
   function addMessage(text, sender, isTyping = false) {
     if (!elements.messages) return;
