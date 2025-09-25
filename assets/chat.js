@@ -601,21 +601,44 @@
 
     async startInitialConversation() {
       try {
-        const response = await this.apiService.startConversation();
-        this.sessionId = response.session_id;
-        this.sessionManager.setSessionId(this.sessionId);
-        
+        try {
+          const response = await this.apiService.startConversation();
+          this.sessionId = response.session_id;
+          this.sessionManager.setSessionId(this.sessionId);
+          
+          const welcomeMessage = {
+            type: 'bot',
+            text: response.response || 'Olá! Sou seu assistente jurídico. Vou te ajudar a encontrar o advogado ideal para seu caso. Para começar, qual é o seu nome?',
+            timestamp: new Date()
+          };
+          
+          this.addMessage(welcomeMessage);
+          this.conversationState.step = 'name';
+        } catch (apiError) {
+          console.warn('API não disponível, usando modo offline:', apiError);
+          // Criar sessão local temporária
+          this.sessionId = 'offline_' + Date.now();
+          this.sessionManager.setSessionId(this.sessionId);
+          
+          const welcomeMessage = {
+            type: 'bot',
+            text: 'Olá! Sou seu assistente jurídico. Vou te ajudar a encontrar o advogado ideal para seu caso. Para começar, qual é o seu nome?',
+            timestamp: new Date()
+          };
+          
+          this.addMessage(welcomeMessage);
+          this.conversationState.step = 'name';
+        }
+      } catch (error) {
+        console.error('Erro crítico ao iniciar conversa:', error);
+        // Mesmo em caso de erro crítico, iniciar conversa local
+        this.sessionId = 'local_' + Date.now();
         const welcomeMessage = {
           type: 'bot',
-          text: response.response || 'Olá! Sou seu assistente jurídico. Vou te ajudar a encontrar o advogado ideal para seu caso. Para começar, qual é o seu nome?',
+          text: 'Olá! Sou seu assistente jurídico. Como posso te ajudar hoje?',
           timestamp: new Date()
         };
-        
         this.addMessage(welcomeMessage);
-        this.conversationState.step = 'name';
-      } catch (error) {
-        console.error('Failed to start conversation:', error);
-        this.showErrorFallback();
       }
     }
 
