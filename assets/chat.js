@@ -27,6 +27,7 @@
     }
     
     static showNotification(message, type = 'error') {
+      // Create notification without DOM conflicts
       const notification = document.createElement('div');
       notification.style.cssText = `
         position: fixed;
@@ -41,33 +42,38 @@
         font-family: 'Poppins', sans-serif;
         font-size: 14px;
         max-width: 300px;
-        animation: slideIn 0.3s ease-out;
+        opacity: 0;
+        transform: translateX(100%);
+        transition: all 0.3s ease;
       `;
       
       notification.textContent = message;
-      document.body.appendChild(notification);
       
-      setTimeout(() => {
-        notification.style.animation = 'slideOut 0.3s ease-in forwards';
-        setTimeout(() => notification.remove(), 300);
-      }, 5000);
+      // Safe insertion
+      try {
+        document.body.appendChild(notification);
+        
+        // Animate in
+        requestAnimationFrame(() => {
+          notification.style.opacity = '1';
+          notification.style.transform = 'translateX(0)';
+        });
+        
+        // Auto remove
+        setTimeout(() => {
+          notification.style.opacity = '0';
+          notification.style.transform = 'translateX(100%)';
+          setTimeout(() => {
+            if (notification.parentNode) {
+              notification.parentNode.removeChild(notification);
+            }
+          }, 300);
+        }, 5000);
+      } catch (error) {
+        console.error('Failed to show notification:', error);
+      }
     }
   }
-
-  // Add CSS animations for notifications
-  const style = document.createElement('style');
-  style.textContent = `
-    @keyframes slideIn {
-      from { transform: translateX(100%); opacity: 0; }
-      to { transform: translateX(0); opacity: 1; }
-    }
-    
-    @keyframes slideOut {
-      from { transform: translateX(0); opacity: 1; }
-      to { transform: translateX(100%); opacity: 0; }
-    }
-  `;
-  document.head.appendChild(style);
 
   // API Service
   class ApiService {
@@ -189,7 +195,7 @@
       this.apiService = apiService;
       this.isAuthorizing = false;
       this.lastAuthAttempt = null;
-      this.authCooldown = 5000; // 5 seconds cooldown between attempts
+      this.authCooldown = 5000;
     }
 
     async openWhatsApp(phoneNumber, metadata = {}) {
@@ -198,7 +204,6 @@
         return;
       }
 
-      // Prevent rapid successive calls
       const now = Date.now();
       if (this.lastAuthAttempt && (now - this.lastAuthAttempt) < this.authCooldown) {
         console.log('WhatsApp authorization cooldown active');
@@ -211,7 +216,6 @@
       try {
         console.log('🔗 Authorizing WhatsApp session...', { phoneNumber, metadata });
         
-        // Ensure we have a valid session ID
         const sessionId = this.getValidSessionId();
         if (!sessionId) {
           throw new Error('No valid session ID available');
@@ -238,7 +242,6 @@
     }
 
     getValidSessionId() {
-      // Try to get session ID from chatBot instance or session manager
       if (window.chatBot && window.chatBot.sessionId) {
         return window.chatBot.sessionId;
       }
@@ -247,30 +250,12 @@
       return sessionManager.getSessionId();
     }
 
-    async checkAuthStatus(phoneNumber) {
-      try {
-        return await this.apiService.checkWhatsAppAuth(phoneNumber);
-      } catch (error) {
-        console.error('Error checking WhatsApp auth status:', error);
-        return null;
-      }
-    }
-
-    async getStatus() {
-      try {
-        return await this.apiService.getWhatsAppStatus();
-      } catch (error) {
-        console.error('Error getting WhatsApp status:', error);
-        return null;
-      }
-    }
-
     showNotification(message) {
       ErrorHandler.showNotification(message, 'success');
     }
   }
 
-  // ChatBot Class
+  // ChatBot Class - COMPLETELY REWRITTEN TO AVOID DOM CONFLICTS
   class ChatBot {
     constructor() {
       this.isOpen = false;
@@ -285,18 +270,40 @@
       this.apiService = new ApiService();
       this.sessionManager = new SessionManager();
       this.whatsappIntegration = new WhatsAppIntegration(this.apiService);
-      this.hookedElements = new Set(); // Track hooked elements to prevent duplicates
-      this.domObserver = null; // MutationObserver for DOM changes
-      this.chatContainerCreated = false; // Track if chat container exists
+      this.hookedElements = new Set();
+      this.chatContainerExists = false;
       
       this.init();
     }
 
     async init() {
-      this.createChatInterface();
-      this.setupEventListeners();
+      // Wait for page to be fully loaded
+      await this.waitForPageLoad();
+      
+      // Create chat interface safely
+      this.createChatInterfaceSafely();
+      
+      // Setup event listeners without conflicts
+      this.setupEventListenersSafely();
+      
+      // Check API health
       await this.checkApiHealth();
+      
+      // Load conversation
       this.loadSavedConversation();
+      
+      // Hook into existing elements safely
+      this.hookExistingElementsSafely();
+    }
+
+    waitForPageLoad() {
+      return new Promise((resolve) => {
+        if (document.readyState === 'complete') {
+          resolve();
+        } else {
+          window.addEventListener('load', resolve, { once: true });
+        }
+      });
     }
 
     async checkApiHealth() {
@@ -331,18 +338,15 @@
       }
     }
 
-    createChatInterface() {
-      // Prevent multiple chat containers
-      if (this.chatContainerCreated) {
-        const existingChat = document.getElementById('chat-root');
-        if (existingChat) {
-          return; // Chat already exists, don't create another
-        }
-        this.chatContainerCreated = false; // Reset flag if element was removed
+    createChatInterfaceSafely() {
+      // Check if chat already exists
+      if (document.getElementById('chat-root')) {
+        console.log('Chat interface already exists');
+        this.chatContainerExists = true;
+        return;
       }
 
       try {
-        // Create chat container safely
         const chatContainer = document.createElement('div');
         chatContainer.id = 'chat-root';
         chatContainer.innerHTML = `
@@ -359,9 +363,9 @@
           </div>
         `;
 
-        // Use safe DOM insertion
-        this.safeAppendToBody(chatContainer);
-        this.chatContainerCreated = true;
+        // Insert safely without conflicts
+        this.insertElementSafely(chatContainer);
+        this.chatContainerExists = true;
         
         console.log('✅ Chat container created successfully');
       } catch (error) {
@@ -369,233 +373,123 @@
       }
     }
 
-    safeAppendToBody(element) {
-      // Wait for React to finish rendering before inserting
-      const insertElement = () => {
+    insertElementSafely(element) {
+      try {
+        // Use a safe insertion method that doesn't conflict with React
+        const insertSafely = () => {
+          try {
+            // Double check element doesn't exist
+            if (document.getElementById(element.id)) {
+              return;
+            }
+            
+            // Use appendChild instead of insertBefore to avoid reference issues
+            document.body.appendChild(element);
+            console.log(`✅ Safely inserted ${element.id}`);
+          } catch (error) {
+            console.error(`❌ Failed to insert ${element.id}:`, error);
+          }
+        };
+
+        // Use multiple strategies to ensure insertion
+        if (document.readyState === 'complete') {
+          insertSafely();
+        } else {
+          window.addEventListener('load', insertSafely, { once: true });
+        }
+
+        // Also try with requestAnimationFrame for React compatibility
+        requestAnimationFrame(insertSafely);
+        
+        // Fallback after a delay
+        setTimeout(insertSafely, 1000);
+      } catch (error) {
+        console.error('❌ Error in insertElementSafely:', error);
+      }
+    }
+
+    setupEventListenersSafely() {
+      // Use event delegation to avoid missing elements
+      document.addEventListener('click', (e) => {
+        if (e.target.id === 'chat-close') {
+          e.preventDefault();
+          this.closeChat();
+        } else if (e.target.id === 'chat-send') {
+          e.preventDefault();
+          this.sendMessage();
+        } else if (e.target.id === 'chat-launcher') {
+          e.preventDefault();
+          this.toggleChat();
+        }
+      });
+
+      document.addEventListener('keypress', (e) => {
+        if (e.target.id === 'chat-input' && e.key === 'Enter') {
+          e.preventDefault();
+          this.sendMessage();
+        }
+      });
+    }
+
+    hookExistingElementsSafely() {
+      // Use a more gentle approach to hook existing elements
+      const hookElements = () => {
         try {
-          // Check if element already exists
-          if (document.getElementById(element.id)) {
-            console.log(`Element ${element.id} already exists, skipping insertion`);
-            return;
+          // Hook chat launcher
+          const launcher = document.getElementById('chat-launcher');
+          if (launcher && !this.hookedElements.has('chat-launcher')) {
+            this.hookedElements.add('chat-launcher');
+            // Don't add event listeners directly, use event delegation instead
+            console.log('✅ Chat launcher detected');
           }
 
-          // Use requestAnimationFrame to ensure DOM is stable
-          requestAnimationFrame(() => {
-            try {
-              // Double-check the element doesn't exist after RAF
-              if (!document.getElementById(element.id)) {
-                document.body.appendChild(element);
-                console.log(`✅ Successfully appended ${element.id} to body`);
-              }
-            } catch (error) {
-              console.error(`❌ Failed to append ${element.id}:`, error);
-              // Fallback: try again after a short delay
-              setTimeout(() => {
-                try {
-                  if (!document.getElementById(element.id)) {
-                    document.body.appendChild(element);
-                  }
-                } catch (retryError) {
-                  console.error(`❌ Retry failed for ${element.id}:`, retryError);
-                }
-              }, 100);
-            }
-          });
+          // Hook WhatsApp buttons without DOM manipulation
+          this.hookWhatsAppButtonsSafely();
         } catch (error) {
-          console.error('❌ Error in insertElement:', error);
+          console.error('❌ Error hooking elements:', error);
         }
       };
 
-      // If DOM is ready, insert immediately, otherwise wait
-      if (document.readyState === 'complete') {
-        insertElement();
-      } else {
-        window.addEventListener('load', insertElement, { once: true });
-      }
+      // Hook immediately and periodically
+      hookElements();
+      setInterval(hookElements, 3000);
     }
 
-    setupEventListeners() {
-      // Wait for React to render, then hook into existing elements
-      this.waitForReactElements();
-
-      const closeBtn = document.getElementById('chat-close');
-      if (closeBtn) {
-        closeBtn.addEventListener('click', () => this.closeChat());
-      }
-
-      const sendBtn = document.getElementById('chat-send');
-      if (sendBtn) {
-        sendBtn.addEventListener('click', () => this.sendMessage());
-      }
-
-      const input = document.getElementById('chat-input');
-      if (input) {
-        input.addEventListener('keypress', (e) => {
-          if (e.key === 'Enter') {
-            this.sendMessage();
-          }
-        });
-      }
-    }
-
-    waitForReactElements() {
-      // Use MutationObserver for more efficient DOM monitoring
-      if (this.domObserver) {
-        this.domObserver.disconnect();
-      }
-
-      this.domObserver = new MutationObserver((mutations) => {
-        let shouldCheck = false;
-        
-        mutations.forEach((mutation) => {
-          if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
-            shouldCheck = true;
-          }
-        });
-        
-        if (shouldCheck) {
-          // Debounce the check to avoid excessive calls
-          clearTimeout(this.checkTimeout);
-          this.checkTimeout = setTimeout(() => {
-            this.checkForElements();
-          }, 500);
-        }
-      });
-
-      // Start observing
-      this.domObserver.observe(document.body, {
-        childList: true,
-        subtree: true
-      });
-
-      // Initial check
-      this.checkForElements();
-      
-      // Fallback periodic check (less frequent)
-      this.elementCheckInterval = setInterval(() => {
-        this.checkForElements();
-      }, 5000);
-    }
-
-    checkForElements() {
+    hookWhatsAppButtonsSafely() {
       try {
-        // Hook into chat launcher (our custom element)
-        const launcher = document.getElementById('chat-launcher');
-        if (launcher && !this.hookedElements.has('chat-launcher')) {
-          this.hookedElements.add('chat-launcher');
-          launcher.setAttribute('data-hooked', 'true');
-          launcher.addEventListener('click', () => this.toggleChat());
-          console.log('✅ Hooked chat launcher');
-        }
-
-        // Hook into existing WhatsApp buttons from React
-        this.hookExistingWhatsAppButtons();
-      } catch (error) {
-        console.error('❌ Error checking for elements:', error);
-      }
-    }
-
-    hookExistingWhatsAppButtons() {
-      try {
-        // Hook into React's floating WhatsApp button
-        const floatingButtons = document.querySelectorAll('[data-testid="floating-whatsapp-button"]');
-        
-        // Remove duplicates if they exist
-        if (floatingButtons.length > 1) {
-          console.log(`🔧 Removing ${floatingButtons.length - 1} duplicate WhatsApp buttons`);
-          for (let i = 1; i < floatingButtons.length; i++) {
-            this.safeRemoveElement(floatingButtons[i]);
-          }
-        }
-        
-        const floatingButton = floatingButtons[0];
-        if (floatingButton && !this.hookedElements.has('floating-whatsapp-button')) {
-          this.hookedElements.add('floating-whatsapp-button');
+        // Use event delegation instead of direct manipulation
+        document.addEventListener('click', (e) => {
+          const target = e.target;
+          const text = target.textContent?.toLowerCase() || '';
           
-          // Safely replace the button to remove existing event listeners
-          this.safeReplaceElement(floatingButton, (newButton) => {
-            newButton.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
+          // Check if it's a WhatsApp button
+          if (target.matches('[data-testid="floating-whatsapp-button"]') || 
+              text.includes('whatsapp') || 
+              text.includes('falar com especialista')) {
+            
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Handle different types of WhatsApp buttons
+            if (target.matches('[data-testid="floating-whatsapp-button"]')) {
               this.handleWhatsAppFloatingButton();
-            });
-          });
-          
-          console.log('✅ Hooked into React WhatsApp floating button');
-        }
-
-        // Hook into other WhatsApp buttons by text content
-        const buttons = document.querySelectorAll('button, a');
-        buttons.forEach(button => {
-          const buttonId = button.id || button.textContent?.trim() || Math.random().toString(36);
-          if (this.hookedElements.has(buttonId)) return;
-          
-          const text = button.textContent?.toLowerCase() || '';
-          
-          if (text.includes('whatsapp 24h') || text.includes('whatsapp')) {
-            this.hookedElements.add(buttonId);
-            button.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
+            } else if (text.includes('whatsapp 24h')) {
               this.handleWhatsApp24h();
-            });
-          } else if (text.includes('falar com especialista') || text.includes('talk to specialist')) {
-            this.hookedElements.add(buttonId);
-            button.addEventListener('click', (e) => {
-              e.preventDefault();
-              e.stopPropagation();
+            } else if (text.includes('falar com especialista')) {
               this.handleTalkToSpecialist();
-            });
+            } else {
+              this.handleWhatsAppFloatingButton(); // Default
+            }
           }
-        });
-      } catch (error) {
-        console.error('❌ Error hooking WhatsApp buttons:', error);
-      }
-    }
-
-    safeRemoveElement(element) {
-      try {
-        if (element && element.parentNode) {
-          element.parentNode.removeChild(element);
-        }
-      } catch (error) {
-        console.error('❌ Error removing element:', error);
-      }
-    }
-
-    safeReplaceElement(oldElement, setupCallback) {
-      try {
-        if (!oldElement || !oldElement.parentNode) {
-          console.warn('⚠️ Cannot replace element: invalid element or no parent');
-          return;
-        }
-
-        const parent = oldElement.parentNode;
-        const newElement = oldElement.cloneNode(true);
+        }, true); // Use capture phase to intercept early
         
-        // Setup the new element
-        if (setupCallback) {
-          setupCallback(newElement);
-        }
-        
-        // Use replaceChild instead of insertBefore to avoid reference issues
-        parent.replaceChild(newElement, oldElement);
-        
+        console.log('✅ WhatsApp button event delegation setup');
       } catch (error) {
-        console.error('❌ Error replacing element:', error);
-        // Fallback: just add event listener to existing element
-        if (setupCallback && oldElement) {
-          try {
-            setupCallback(oldElement);
-          } catch (fallbackError) {
-            console.error('❌ Fallback setup failed:', fallbackError);
-          }
-        }
+        console.error('❌ Error setting up WhatsApp button hooks:', error);
       }
     }
 
     async handleWhatsAppFloatingButton() {
-      // Ensure we have a session before attempting WhatsApp integration
       if (!this.sessionId) {
         await this.startInitialConversation();
       }
@@ -644,8 +538,7 @@
     }
 
     getDefaultPhoneNumber() {
-      // Return a default phone number - this should be configured based on your business
-      return '5511999999999'; // Replace with your actual WhatsApp business number
+      return '5511999999999';
     }
 
     toggleChat() {
@@ -699,6 +592,8 @@
 
     async sendMessage() {
       const input = document.getElementById('chat-input');
+      if (!input) return;
+      
       const message = input.value.trim();
       
       if (!message || this.isTyping) return;
@@ -824,6 +719,7 @@
       
       this.isTyping = true;
       const messagesContainer = document.getElementById('chat-messages');
+      if (!messagesContainer) return;
       
       const typingEl = document.createElement('div');
       typingEl.className = 'message bot typing-message';
@@ -863,34 +759,19 @@
       }
     }
 
-    // Cleanup method to prevent memory leaks
     destroy() {
-      if (this.domObserver) {
-        this.domObserver.disconnect();
-        this.domObserver = null;
-      }
-      
-      if (this.elementCheckInterval) {
-        clearInterval(this.elementCheckInterval);
-      }
-      
-      if (this.checkTimeout) {
-        clearTimeout(this.checkTimeout);
-      }
-      
       this.hookedElements.clear();
-      this.chatContainerCreated = false;
+      this.chatContainerExists = false;
       
-      // Remove chat container if it exists
       const chatRoot = document.getElementById('chat-root');
-      if (chatRoot) {
-        this.safeRemoveElement(chatRoot);
+      if (chatRoot && chatRoot.parentNode) {
+        chatRoot.parentNode.removeChild(chatRoot);
       }
     }
   }
 
   /**
-   * Inicializa o chat customizado de forma estratégica
+   * Inicializa o chat de forma completamente segura
    */
   async function initChat() {
     if (chatInitialized) return;
@@ -904,6 +785,9 @@
     }
     
     try {
+      // Wait a bit more for React to settle
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      
       // Initialize ChatBot
       chatBot = new ChatBot();
       window.chatBot = chatBot;
@@ -911,26 +795,28 @@
       console.log("✅ Chat integrado com sucesso!");
     } catch (error) {
       console.error("❌ Erro ao inicializar chat:", error);
-      chatInitialized = false; // Reset flag to allow retry
+      chatInitialized = false;
     }
   }
 
-  // Wait for DOM and React to be ready
+  // Initialize with multiple strategies
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(initChat, 2000); // Give React more time to render
+      setTimeout(initChat, 4000);
     });
   } else {
-    setTimeout(initChat, 2000); // Give React more time to render
+    setTimeout(initChat, 4000);
   }
 
-  // Safety: try to run after a few more seconds as well
-  setTimeout(initChat, 5000);
-  
-  // Handle page visibility changes to reinitialize if needed
+  // Additional safety nets
+  window.addEventListener('load', () => {
+    setTimeout(initChat, 2000);
+  });
+
+  // Handle page visibility changes
   document.addEventListener('visibilitychange', () => {
     if (!document.hidden && !chatInitialized) {
-      setTimeout(initChat, 1000);
+      setTimeout(initChat, 2000);
     }
   });
 })();
