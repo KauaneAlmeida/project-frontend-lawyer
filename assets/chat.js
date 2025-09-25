@@ -163,12 +163,7 @@
     addMessage(message, 'user');
     elements.input.value = '';
 
-    // Show typing indicator and respond
-    showTypingIndicator();
-    setTimeout(() => {
-      hideTypingIndicator();
-      handleBotResponse(message);
-    }, CONFIG.typingDelay);
+    // Apenas envia a mensagem - o back-end cuida das respostas
   }
 
   // Add message to chat
@@ -202,7 +197,7 @@
   function showTypingIndicator() {
     chatState.isTyping = true;
     const typingDiv = addMessage(
-      '<div class="typing-indicator">Digitando<span></span><span></span><span></span></div>', 
+      'Digitando...', 
       'bot', 
       true
     );
@@ -220,57 +215,8 @@
     }
   }
 
-  // Handle bot response
-  function handleBotResponse(userMessage) {
-    const response = generateBotResponse(userMessage);
-    addMessage(response, 'bot');
-  }
 
-  // Generate bot response
-  function generateBotResponse(message) {
-    const lowerMessage = message.toLowerCase();
-    
-    // Legal keywords and responses
-    const responses = {
-      // Greetings
-      'oi': 'Olá! Como posso ajudá-lo com questões jurídicas hoje?',
-      'olá': 'Oi! Estou aqui para ajudar com suas dúvidas jurídicas.',
-      'bom dia': 'Bom dia! Em que posso auxiliá-lo?',
-      'boa tarde': 'Boa tarde! Como posso ajudar?',
-      'boa noite': 'Boa noite! Estou aqui para esclarecer suas dúvidas jurídicas.',
-      
-      // Legal areas
-      'trabalhista': 'Questões trabalhistas são nossa especialidade! Posso conectá-lo com um advogado especializado em direito do trabalho. Qual é sua situação específica?',
-      'penal': 'Para questões de direito penal, temos advogados experientes. Você precisa de defesa criminal ou tem dúvidas sobre um processo?',
-      'civil': 'Direito civil abrange muitas áreas. Você tem questões sobre contratos, família, sucessões ou responsabilidade civil?',
-      'previdenciário': 'Posso ajudar com questões previdenciárias. Você precisa de auxílio com aposentadoria, benefícios ou revisão do INSS?',
-      
-      // Common legal issues
-      'demissão': 'Questões sobre demissão são comuns. Você foi demitido sem justa causa? Recebeu todas as verbas rescisórias? Posso conectá-lo com um especialista.',
-      'acidente': 'Acidentes podem gerar direitos a indenização. Foi acidente de trabalho, trânsito ou outro tipo? Vou direcioná-lo ao advogado adequado.',
-      'divórcio': 'Para questões de divórcio, temos advogados especializados em direito de família. É consensual ou litigioso?',
-      'herança': 'Questões sucessórias podem ser complexas. Você é herdeiro, inventariante ou tem dúvidas sobre testamento?',
-      
-      // Default responses
-      'default': [
-        'Entendo sua preocupação. Para melhor atendê-lo, vou conectá-lo com um de nossos advogados especialistas.',
-        'Essa é uma questão importante. Nossos advogados podem orientá-lo adequadamente. Vou direcioná-lo agora.',
-        'Para dar a melhor orientação jurídica, preciso conectá-lo com um especialista. Um momento, por favor.',
-        'Sua situação merece atenção especializada. Vou encaminhá-lo para um advogado que pode ajudá-lo melhor.'
-      ]
-    };
 
-    // Check for specific keywords
-    for (const [keyword, response] of Object.entries(responses)) {
-      if (keyword !== 'default' && lowerMessage.includes(keyword)) {
-        return response;
-      }
-    }
-
-    // Return random default response
-    const defaultResponses = responses.default;
-    return defaultResponses[Math.floor(Math.random() * defaultResponses.length)];
-  }
 
   // Scroll to bottom of messages
   function scrollToBottom() {
@@ -298,6 +244,8 @@
     close: closeChat,
     toggle: toggleChat,
     addMessage: addMessage,
+    showTyping: showTypingIndicator,
+    hideTyping: hideTypingIndicator,
     getHistory: () => chatState.messageHistory
   };
 
