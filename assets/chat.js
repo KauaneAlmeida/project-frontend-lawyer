@@ -294,35 +294,36 @@
     }
 
     createChatInterface() {
+      // Remove existing chat if present
       const existingChat = document.getElementById('chat-root');
       if (existingChat) {
         existingChat.remove();
       }
 
-      const chatHTML = `
-        <div id="chat-root">
-          <div class="chat-container">
-            <div class="chat-header">
-              <span>Assistente Jurídico</span>
-              <button class="chat-close-btn" id="chat-close">×</button>
-            </div>
-            <div class="messages" id="chat-messages"></div>
-            <div class="input-area">
-              <input type="text" id="chat-input" placeholder="Digite sua mensagem..." />
-              <button id="chat-send">Enviar</button>
-            </div>
+      // Create chat container - APPEND to body, don't interfere with React
+      const chatContainer = document.createElement('div');
+      chatContainer.id = 'chat-root';
+      chatContainer.innerHTML = `
+        <div class="chat-container">
+          <div class="chat-header">
+            <span>Assistente Jurídico</span>
+            <button class="chat-close-btn" id="chat-close">×</button>
+          </div>
+          <div class="messages" id="chat-messages"></div>
+          <div class="input-area">
+            <input type="text" id="chat-input" placeholder="Digite sua mensagem..." />
+            <button id="chat-send">Enviar</button>
           </div>
         </div>
       `;
 
-      document.body.insertAdjacentHTML('beforeend', chatHTML);
+      // Safely append to body without interfering with React
+      document.body.appendChild(chatContainer);
     }
 
     setupEventListeners() {
-      const launcher = document.getElementById('chat-launcher');
-      if (launcher) {
-        launcher.addEventListener('click', () => this.toggleChat());
-      }
+      // Wait for React to render, then hook into existing elements
+      this.waitForReactElements();
 
       const closeBtn = document.getElementById('chat-close');
       if (closeBtn) {
@@ -342,39 +343,67 @@
           }
         });
       }
-
-      this.setupWhatsAppButtons();
     }
 
-    setupWhatsAppButtons() {
-      setTimeout(() => {
-        const whatsappButton = document.querySelector('[data-testid="floating-whatsapp-button"]');
-        if (whatsappButton) {
-          const newButton = whatsappButton.cloneNode(true);
-          whatsappButton.parentNode.replaceChild(newButton, whatsappButton);
-          
-          newButton.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.handleWhatsAppFloatingButton();
-          });
+    waitForReactElements() {
+      // Wait for React to render and then hook into existing elements
+      const checkForElements = () => {
+        // Hook into chat launcher (our custom element)
+        const launcher = document.getElementById('chat-launcher');
+        if (launcher && !launcher.hasAttribute('data-hooked')) {
+          launcher.setAttribute('data-hooked', 'true');
+          launcher.addEventListener('click', () => this.toggleChat());
         }
-      }, 1000);
 
-      document.addEventListener('click', (e) => {
-        const target = e.target.closest('button, a');
-        if (!target) return;
+        // Hook into existing WhatsApp buttons from React
+        this.hookExistingWhatsAppButtons();
+      };
 
-        const text = target.textContent?.toLowerCase() || '';
+      // Check immediately and then periodically
+      checkForElements();
+      setInterval(checkForElements, 1000);
+    }
+
+    hookExistingWhatsAppButtons() {
+      // Hook into React's floating WhatsApp button
+      const floatingButton = document.querySelector('[data-testid="floating-whatsapp-button"]');
+      if (floatingButton && !floatingButton.hasAttribute('data-hooked')) {
+        floatingButton.setAttribute('data-hooked', 'true');
+        
+        // Clone to remove React event listeners
+        const newButton = floatingButton.cloneNode(true);
+        floatingButton.parentNode.replaceChild(newButton, floatingButton);
+        
+        newButton.addEventListener('click', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          this.handleWhatsAppFloatingButton();
+        });
+        
+        console.log('✅ Hooked into React WhatsApp floating button');
+      }
+
+      // Hook into other WhatsApp buttons by text content
+      const buttons = document.querySelectorAll('button, a');
+      buttons.forEach(button => {
+        if (button.hasAttribute('data-hooked')) return;
+        
+        const text = button.textContent?.toLowerCase() || '';
         
         if (text.includes('whatsapp 24h') || text.includes('whatsapp')) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.handleWhatsApp24h();
+          button.setAttribute('data-hooked', 'true');
+          button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleWhatsApp24h();
+          });
         } else if (text.includes('falar com especialista') || text.includes('talk to specialist')) {
-          e.preventDefault();
-          e.stopPropagation();
-          this.handleTalkToSpecialist();
+          button.setAttribute('data-hooked', 'true');
+          button.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleTalkToSpecialist();
+          });
         }
       });
     }
@@ -626,34 +655,7 @@
   }
 
   /**
-   * Função para "plugar" no botão flutuante já existente do React
-   */
-  function hookExistingWhatsAppButton() {
-    const button = document.querySelector('[data-testid="floating-whatsapp-button"]');
-    if (!button) {
-      console.warn("⚠️ Botão do WhatsApp não encontrado ainda.");
-      return;
-    }
-
-    const newButton = button.cloneNode(true);
-    button.parentNode.replaceChild(newButton, button);
-
-    newButton.addEventListener("click", (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-
-      console.log("🔥 Botão WhatsApp clicado!");
-      
-      if (chatBot) {
-        chatBot.handleWhatsAppFloatingButton();
-      }
-    });
-
-    console.log("✅ Botão WhatsApp existente reaproveitado!");
-  }
-
-  /**
-   * Inicializa o chat customizado
+   * Inicializa o chat customizado de forma estratégica
    */
   async function initChat() {
     if (chatInitialized) return;
@@ -665,13 +667,19 @@
     chatBot = new ChatBot();
     window.chatBot = chatBot;
     
-    // Hook existing WhatsApp button
-    hookExistingWhatsAppButton();
+    console.log("✅ Chat integrado com sucesso!");
   }
 
-  // Wait for DOM to be ready
-  document.addEventListener("DOMContentLoaded", initChat);
+  // Wait for DOM and React to be ready
+  if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', () => {
+      setTimeout(initChat, 1000); // Give React time to render
+    });
+  } else {
+    setTimeout(initChat, 1000); // Give React time to render
+  }
 
-  // Safety: try to run after a few seconds as well
+  // Safety: try to run after a few more seconds as well
   setTimeout(initChat, 3000);
+  setTimeout(initChat, 5000);
 })();
