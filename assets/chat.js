@@ -471,7 +471,7 @@
 
       // Hook immediately and periodically
       hookElements();
-      setInterval(hookElements, 3000);
+      setInterval(hookElements, 1000);
     }
 
     hookWhatsAppButtonsSafely() {
