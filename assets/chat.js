@@ -196,13 +196,35 @@
   // Show typing indicator
   function showTypingIndicator() {
     chatState.isTyping = true;
-    const typingDiv = addMessage(
-      'Digitando...', 
-      'bot', 
-      true
-    );
+    
+    if (!elements.messages) return;
+    
+    const typingDiv = document.createElement('div');
+    typingDiv.className = 'message bot';
+    typingDiv.id = 'typing-indicator';
+    
+    typingDiv.innerHTML = `
+      <img src="${CONFIG.botAvatar}" alt="bot" class="avatar" onerror="this.style.display='none'">
+      <div class="typing-indicator">
+        <span class="typing-text">Digitando</span>
+        <div class="typing-dots">
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+          <div class="typing-dot"></div>
+        </div>
+      </div>
+    `;
+    
+    elements.messages.appendChild(typingDiv);
+    scrollToBottom();
+  }
+
+  // Hide typing indicator
+  function hideTypingIndicator() {
+    chatState.isTyping = false;
+    const typingDiv = document.getElementById('typing-indicator');
     if (typingDiv) {
-      typingDiv.id = 'typing-indicator';
+      typingDiv.remove();
     }
   }
 
