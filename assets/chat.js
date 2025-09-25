@@ -3,28 +3,14 @@
 
   let chatInitialized = false;
 
-  async function authorizeWhatsAppSession(origin, data) {
+  // Import the ChatBot class
+  async function loadChatBot() {
     try {
-      console.log("🔗 Chamando backend para autorização...");
-      const response = await fetch("https://api.m.lima/chat/authorize", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          origin,
-          data,
-        }),
-      });
-
-      const result = await response.json();
-      console.log("✅ Autorizado:", result);
-
-      if (result?.whatsappUrl) {
-        window.open(result.whatsappUrl, "_blank");
-      }
+      const { default: ChatBot } = await import('./src/components/ChatBot.js');
+      return ChatBot;
     } catch (error) {
-      console.error("❌ Erro ao autorizar sessão:", error);
+      console.error('Failed to load ChatBot:', error);
+      return null;
     }
   }
 
@@ -49,10 +35,11 @@
       e.stopPropagation();
 
       console.log("🔥 Botão WhatsApp clicado!");
-      authorizeWhatsAppSession("whatsapp_button", {
-        origem: "Botão Flutuante",
-        site: "m.lima",
-      });
+      
+      // Use the ChatBot's WhatsApp integration
+      if (window.chatBot) {
+        window.chatBot.handleWhatsAppFloatingButton();
+      }
     });
 
     console.log("✅ Botão WhatsApp existente reaproveitado!");
@@ -61,11 +48,16 @@
   /**
    * Inicializa o chat customizado
    */
-  function initChat() {
+  async function initChat() {
     if (chatInitialized) return;
     chatInitialized = true;
 
     console.log("🚀 Inicializando integração do chat...");
+    
+    // Load and initialize ChatBot
+    await loadChatBot();
+    
+    // Hook existing WhatsApp button
     hookExistingWhatsAppButton();
   }
 
