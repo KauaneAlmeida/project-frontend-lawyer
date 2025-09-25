@@ -411,17 +411,28 @@
     setupEventListenersSafely() {
       // Use event delegation to avoid missing elements
       document.addEventListener('click', (e) => {
-        if (e.target.id === 'chat-close') {
+        // Handle chat close button
+        if (e.target && e.target.id === 'chat-close') {
           e.preventDefault();
           this.closeChat();
-        } else if (e.target.id === 'chat-send') {
+        }
+        // Handle chat send button
+        else if (e.target && e.target.id === 'chat-send') {
           e.preventDefault();
           this.sendMessage();
-        } else if (e.target.id === 'chat-launcher') {
+        }
+        // Handle chat launcher - check both the container and its children
+        else if (e.target && (
+          e.target.id === 'chat-launcher' || 
+          e.target.closest('#chat-launcher') ||
+          e.target.classList.contains('chat-launcher-icon') ||
+          e.target.classList.contains('chat-launcher-text')
+        )) {
           e.preventDefault();
+          e.stopPropagation();
           this.toggleChat();
         }
-      });
+      }, true); // Use capture phase
 
       document.addEventListener('keypress', (e) => {
         if (e.target.id === 'chat-input' && e.key === 'Enter') {
@@ -439,7 +450,15 @@
           const launcher = document.getElementById('chat-launcher');
           if (launcher && !this.hookedElements.has('chat-launcher')) {
             this.hookedElements.add('chat-launcher');
-            // Don't add event listeners directly, use event delegation instead
+            
+            // Add direct click handler as backup
+            launcher.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              console.log('🎯 Chat launcher clicked directly');
+              this.toggleChat();
+            });
+            
             console.log('✅ Chat launcher detected');
           }
 
@@ -542,6 +561,7 @@
     }
 
     toggleChat() {
+      console.log('🔄 Toggle chat called, current state:', this.isOpen);
       if (this.isOpen) {
         this.closeChat();
       } else {
@@ -550,23 +570,32 @@
     }
 
     openChat() {
+      console.log('📂 Opening chat...');
       const chatRoot = document.getElementById('chat-root');
       if (chatRoot) {
         chatRoot.classList.add('active');
         this.isOpen = true;
+        console.log('✅ Chat opened successfully');
         
         setTimeout(() => {
           const input = document.getElementById('chat-input');
           if (input) input.focus();
         }, 300);
+      } else {
+        console.error('❌ Chat root element not found');
+        // Try to recreate the chat interface
+        this.createChatInterfaceSafely();
+        setTimeout(() => this.openChat(), 500);
       }
     }
 
     closeChat() {
+      console.log('📁 Closing chat...');
       const chatRoot = document.getElementById('chat-root');
       if (chatRoot) {
         chatRoot.classList.remove('active');
         this.isOpen = false;
+        console.log('✅ Chat closed successfully');
       }
     }
 
