@@ -286,6 +286,8 @@
       this.sessionManager = new SessionManager();
       this.whatsappIntegration = new WhatsAppIntegration(this.apiService);
       this.hookedElements = new Set(); // Track hooked elements to prevent duplicates
+      this.domObserver = null; // MutationObserver for DOM changes
+      this.chatContainerCreated = false; // Track if chat container exists
       
       this.init();
     }
@@ -330,31 +332,86 @@
     }
 
     createChatInterface() {
-      // Remove existing chat if present
-      const existingChat = document.getElementById('chat-root');
-      if (existingChat) {
-        existingChat.remove();
+      // Prevent multiple chat containers
+      if (this.chatContainerCreated) {
+        const existingChat = document.getElementById('chat-root');
+        if (existingChat) {
+          return; // Chat already exists, don't create another
+        }
+        this.chatContainerCreated = false; // Reset flag if element was removed
       }
 
-      // Create chat container - APPEND to body, don't interfere with React
-      const chatContainer = document.createElement('div');
-      chatContainer.id = 'chat-root';
-      chatContainer.innerHTML = `
-        <div class="chat-container">
-          <div class="chat-header">
-            <span>Assistente Jurídico</span>
-            <button class="chat-close-btn" id="chat-close">×</button>
+      try {
+        // Create chat container safely
+        const chatContainer = document.createElement('div');
+        chatContainer.id = 'chat-root';
+        chatContainer.innerHTML = `
+          <div class="chat-container">
+            <div class="chat-header">
+              <span>Assistente Jurídico</span>
+              <button class="chat-close-btn" id="chat-close">×</button>
+            </div>
+            <div class="messages" id="chat-messages"></div>
+            <div class="input-area">
+              <input type="text" id="chat-input" placeholder="Digite sua mensagem..." />
+              <button id="chat-send">Enviar</button>
+            </div>
           </div>
-          <div class="messages" id="chat-messages"></div>
-          <div class="input-area">
-            <input type="text" id="chat-input" placeholder="Digite sua mensagem..." />
-            <button id="chat-send">Enviar</button>
-          </div>
-        </div>
-      `;
+        `;
 
-      // Safely append to body without interfering with React
-      document.body.appendChild(chatContainer);
+        // Use safe DOM insertion
+        this.safeAppendToBody(chatContainer);
+        this.chatContainerCreated = true;
+        
+        console.log('✅ Chat container created successfully');
+      } catch (error) {
+        console.error('❌ Failed to create chat container:', error);
+      }
+    }
+
+    safeAppendToBody(element) {
+      // Wait for React to finish rendering before inserting
+      const insertElement = () => {
+        try {
+          // Check if element already exists
+          if (document.getElementById(element.id)) {
+            console.log(`Element ${element.id} already exists, skipping insertion`);
+            return;
+          }
+
+          // Use requestAnimationFrame to ensure DOM is stable
+          requestAnimationFrame(() => {
+            try {
+              // Double-check the element doesn't exist after RAF
+              if (!document.getElementById(element.id)) {
+                document.body.appendChild(element);
+                console.log(`✅ Successfully appended ${element.id} to body`);
+              }
+            } catch (error) {
+              console.error(`❌ Failed to append ${element.id}:`, error);
+              // Fallback: try again after a short delay
+              setTimeout(() => {
+                try {
+                  if (!document.getElementById(element.id)) {
+                    document.body.appendChild(element);
+                  }
+                } catch (retryError) {
+                  console.error(`❌ Retry failed for ${element.id}:`, retryError);
+                }
+              }, 100);
+            }
+          });
+        } catch (error) {
+          console.error('❌ Error in insertElement:', error);
+        }
+      };
+
+      // If DOM is ready, insert immediately, otherwise wait
+      if (document.readyState === 'complete') {
+        insertElement();
+      } else {
+        window.addEventListener('load', insertElement, { once: true });
+      }
     }
 
     setupEventListeners() {
@@ -382,80 +439,159 @@
     }
 
     waitForReactElements() {
-      // Wait for React to render and then hook into existing elements
-      const checkForElements = () => {
+      // Use MutationObserver for more efficient DOM monitoring
+      if (this.domObserver) {
+        this.domObserver.disconnect();
+      }
+
+      this.domObserver = new MutationObserver((mutations) => {
+        let shouldCheck = false;
+        
+        mutations.forEach((mutation) => {
+          if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+            shouldCheck = true;
+          }
+        });
+        
+        if (shouldCheck) {
+          // Debounce the check to avoid excessive calls
+          clearTimeout(this.checkTimeout);
+          this.checkTimeout = setTimeout(() => {
+            this.checkForElements();
+          }, 500);
+        }
+      });
+
+      // Start observing
+      this.domObserver.observe(document.body, {
+        childList: true,
+        subtree: true
+      });
+
+      // Initial check
+      this.checkForElements();
+      
+      // Fallback periodic check (less frequent)
+      this.elementCheckInterval = setInterval(() => {
+        this.checkForElements();
+      }, 5000);
+    }
+
+    checkForElements() {
+      try {
         // Hook into chat launcher (our custom element)
         const launcher = document.getElementById('chat-launcher');
         if (launcher && !this.hookedElements.has('chat-launcher')) {
           this.hookedElements.add('chat-launcher');
           launcher.setAttribute('data-hooked', 'true');
           launcher.addEventListener('click', () => this.toggleChat());
+          console.log('✅ Hooked chat launcher');
         }
 
         // Hook into existing WhatsApp buttons from React
         this.hookExistingWhatsAppButtons();
-      };
-
-      // Check immediately and then periodically
-      checkForElements();
-      this.elementCheckInterval = setInterval(checkForElements, 2000);
+      } catch (error) {
+        console.error('❌ Error checking for elements:', error);
+      }
     }
 
     hookExistingWhatsAppButtons() {
-      // Hook into React's floating WhatsApp button
-      const floatingButtons = document.querySelectorAll('[data-testid="floating-whatsapp-button"]');
-      
-      // Remove duplicates if they exist
-      if (floatingButtons.length > 1) {
-        console.log(`🔧 Removing ${floatingButtons.length - 1} duplicate WhatsApp buttons`);
-        for (let i = 1; i < floatingButtons.length; i++) {
-          floatingButtons[i].remove();
-        }
-      }
-      
-      const floatingButton = floatingButtons[0];
-      if (floatingButton && !this.hookedElements.has('floating-whatsapp-button')) {
-        this.hookedElements.add('floating-whatsapp-button');
+      try {
+        // Hook into React's floating WhatsApp button
+        const floatingButtons = document.querySelectorAll('[data-testid="floating-whatsapp-button"]');
         
-        // Remove existing event listeners by cloning
-        const newButton = floatingButton.cloneNode(true);
-        if (floatingButton.parentNode) {
-          floatingButton.parentNode.replaceChild(newButton, floatingButton);
+        // Remove duplicates if they exist
+        if (floatingButtons.length > 1) {
+          console.log(`🔧 Removing ${floatingButtons.length - 1} duplicate WhatsApp buttons`);
+          for (let i = 1; i < floatingButtons.length; i++) {
+            this.safeRemoveElement(floatingButtons[i]);
+          }
+        }
+        
+        const floatingButton = floatingButtons[0];
+        if (floatingButton && !this.hookedElements.has('floating-whatsapp-button')) {
+          this.hookedElements.add('floating-whatsapp-button');
           
-          newButton.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.handleWhatsAppFloatingButton();
+          // Safely replace the button to remove existing event listeners
+          this.safeReplaceElement(floatingButton, (newButton) => {
+            newButton.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              this.handleWhatsAppFloatingButton();
+            });
           });
           
           console.log('✅ Hooked into React WhatsApp floating button');
         }
-      }
 
-      // Hook into other WhatsApp buttons by text content
-      const buttons = document.querySelectorAll('button, a');
-      buttons.forEach(button => {
-        const buttonId = button.id || button.textContent?.trim() || Math.random().toString(36);
-        if (this.hookedElements.has(buttonId)) return;
-        
-        const text = button.textContent?.toLowerCase() || '';
-        
-        if (text.includes('whatsapp 24h') || text.includes('whatsapp')) {
-          this.hookedElements.add(buttonId);
-          button.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.handleWhatsApp24h();
-          });
-        } else if (text.includes('falar com especialista') || text.includes('talk to specialist')) {
-          this.hookedElements.add(buttonId);
-          button.addEventListener('click', (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            this.handleTalkToSpecialist();
-          });
+        // Hook into other WhatsApp buttons by text content
+        const buttons = document.querySelectorAll('button, a');
+        buttons.forEach(button => {
+          const buttonId = button.id || button.textContent?.trim() || Math.random().toString(36);
+          if (this.hookedElements.has(buttonId)) return;
+          
+          const text = button.textContent?.toLowerCase() || '';
+          
+          if (text.includes('whatsapp 24h') || text.includes('whatsapp')) {
+            this.hookedElements.add(buttonId);
+            button.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              this.handleWhatsApp24h();
+            });
+          } else if (text.includes('falar com especialista') || text.includes('talk to specialist')) {
+            this.hookedElements.add(buttonId);
+            button.addEventListener('click', (e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              this.handleTalkToSpecialist();
+            });
+          }
+        });
+      } catch (error) {
+        console.error('❌ Error hooking WhatsApp buttons:', error);
+      }
+    }
+
+    safeRemoveElement(element) {
+      try {
+        if (element && element.parentNode) {
+          element.parentNode.removeChild(element);
         }
-      });
+      } catch (error) {
+        console.error('❌ Error removing element:', error);
+      }
+    }
+
+    safeReplaceElement(oldElement, setupCallback) {
+      try {
+        if (!oldElement || !oldElement.parentNode) {
+          console.warn('⚠️ Cannot replace element: invalid element or no parent');
+          return;
+        }
+
+        const parent = oldElement.parentNode;
+        const newElement = oldElement.cloneNode(true);
+        
+        // Setup the new element
+        if (setupCallback) {
+          setupCallback(newElement);
+        }
+        
+        // Use replaceChild instead of insertBefore to avoid reference issues
+        parent.replaceChild(newElement, oldElement);
+        
+      } catch (error) {
+        console.error('❌ Error replacing element:', error);
+        // Fallback: just add event listener to existing element
+        if (setupCallback && oldElement) {
+          try {
+            setupCallback(oldElement);
+          } catch (fallbackError) {
+            console.error('❌ Fallback setup failed:', fallbackError);
+          }
+        }
+      }
     }
 
     async handleWhatsAppFloatingButton() {
@@ -729,10 +865,27 @@
 
     // Cleanup method to prevent memory leaks
     destroy() {
+      if (this.domObserver) {
+        this.domObserver.disconnect();
+        this.domObserver = null;
+      }
+      
       if (this.elementCheckInterval) {
         clearInterval(this.elementCheckInterval);
       }
+      
+      if (this.checkTimeout) {
+        clearTimeout(this.checkTimeout);
+      }
+      
       this.hookedElements.clear();
+      this.chatContainerCreated = false;
+      
+      // Remove chat container if it exists
+      const chatRoot = document.getElementById('chat-root');
+      if (chatRoot) {
+        this.safeRemoveElement(chatRoot);
+      }
     }
   }
 
@@ -750,22 +903,34 @@
       window.chatBot.destroy();
     }
     
-    // Initialize ChatBot
-    chatBot = new ChatBot();
-    window.chatBot = chatBot;
-    
-    console.log("✅ Chat integrado com sucesso!");
+    try {
+      // Initialize ChatBot
+      chatBot = new ChatBot();
+      window.chatBot = chatBot;
+      
+      console.log("✅ Chat integrado com sucesso!");
+    } catch (error) {
+      console.error("❌ Erro ao inicializar chat:", error);
+      chatInitialized = false; // Reset flag to allow retry
+    }
   }
 
   // Wait for DOM and React to be ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(initChat, 1500); // Give React more time to render
+      setTimeout(initChat, 2000); // Give React more time to render
     });
   } else {
-    setTimeout(initChat, 1500); // Give React more time to render
+    setTimeout(initChat, 2000); // Give React more time to render
   }
 
-  // Safety: try to run after a few more seconds as well, but less frequently
-  setTimeout(initChat, 4000);
+  // Safety: try to run after a few more seconds as well
+  setTimeout(initChat, 5000);
+  
+  // Handle page visibility changes to reinitialize if needed
+  document.addEventListener('visibilitychange', () => {
+    if (!document.hidden && !chatInitialized) {
+      setTimeout(initChat, 1000);
+    }
+  });
 })();
