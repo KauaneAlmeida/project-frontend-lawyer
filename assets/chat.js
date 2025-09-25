@@ -762,30 +762,20 @@
       const buttonMessage = document.createElement('div');
       buttonMessage.className = 'message bot';
       buttonMessage.innerHTML = `
-          this.addMessage({
-            type: 'bot',
-            text: response.response,
-            timestamp: new Date()
-          });
-        }
-        
-        this.updateConversationState(response);
-        
-        if (response.phone_collected) {
-          setTimeout(() => {
-            this.handlePhoneCollected(response);
-          }, 1000);
-        }
-        
-      } catch (error) {
-        console.error('Failed to send message:', error);
-        this.hideTyping();
-        this.addMessage({
-          type: 'bot',
-          text: 'Desculpe, ocorreu um erro. Tente novamente ou entre em contato diretamente pelo WhatsApp.',
-          timestamp: new Date()
-        });
-      }
+        <img class="avatar" src="./assets/bot.png" alt="Assistente" />
+        <div class="bubble">
+          <button class="whatsapp-button" onclick="window.chatBot.whatsappIntegration.openWhatsApp('${this.conversationState.userData.phone}', {
+            source: 'chat_button',
+            user_data: ${JSON.stringify(this.conversationState.userData).replace(/"/g, '&quot;')},
+            session_id: '${this.sessionId}'
+          })">
+            📱 Falar no WhatsApp
+          </button>
+        </div>
+      `;
+      
+      messagesContainer.appendChild(buttonMessage);
+      messagesContainer.scrollTop = messagesContainer.scrollHeight;
     }
 
     updateConversationState(response) {
