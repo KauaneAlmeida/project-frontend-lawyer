@@ -20,19 +20,32 @@
     retryCount: 0
   };
 
-  // DOM elements
+  // DOM elements - usar os elementos que já existem
   let elements = {};
 
   // Initialize chat widget
   function initChat() {
-    createChatElements();
+    // Buscar elementos existentes no DOM
+    elements = {
+      launcher: document.getElementById('chat-launcher'),
+      chatRoot: document.getElementById('chat-root'),
+      closeBtn: document.querySelector('.chat-close-btn'),
+      messages: document.getElementById('chat-messages'),
+      input: document.getElementById('chat-input'),
+      sendBtn: document.getElementById('chat-send')
+    };
+
+    // Se os elementos não existirem, criar apenas o necessário
+    if (!elements.chatRoot) {
+      createChatElements();
+    }
+
     bindEvents();
     showWelcomeMessage();
   }
 
-  // Create chat DOM structure
+  // Create chat DOM structure apenas se não existir
   function createChatElements() {
-    // Create chat container
     const chatRoot = document.createElement('div');
     chatRoot.id = 'chat-root';
     chatRoot.innerHTML = `
@@ -51,43 +64,40 @@
     
     document.body.appendChild(chatRoot);
 
-    // Cache DOM elements
-    elements = {
-      chatRoot,
-      launcher: document.getElementById('chat-launcher'),
-      closeBtn: chatRoot.querySelector('.chat-close-btn'),
-      messages: document.getElementById('chat-messages'),
-      input: document.getElementById('chat-input'),
-      sendBtn: document.getElementById('chat-send')
-    };
+    // Atualizar referências dos elementos
+    elements.chatRoot = chatRoot;
+    elements.closeBtn = chatRoot.querySelector('.chat-close-btn');
+    elements.messages = document.getElementById('chat-messages');
+    elements.input = document.getElementById('chat-input');
+    elements.sendBtn = document.getElementById('chat-send');
   }
 
   // Bind event listeners
   function bindEvents() {
     // Launcher click
-    elements.launcher?.addEventListener('click', toggleChat);
+    if (elements.launcher) {
+      elements.launcher.addEventListener('click', toggleChat);
+    }
     
     // Close button
-    elements.closeBtn.addEventListener('click', closeChat);
+    if (elements.closeBtn) {
+      elements.closeBtn.addEventListener('click', closeChat);
+    }
     
     // Send button
-    elements.sendBtn.addEventListener('click', handleSendMessage);
+    if (elements.sendBtn) {
+      elements.sendBtn.addEventListener('click', handleSendMessage);
+    }
     
     // Enter key in input
-    elements.input.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter' && !e.shiftKey) {
-        e.preventDefault();
-        handleSendMessage();
-      }
-    });
-
-    // Click outside to close (optional)
-    document.addEventListener('click', (e) => {
-      if (chatState.isOpen && !elements.chatRoot.contains(e.target) && !elements.launcher?.contains(e.target)) {
-        // Uncomment to enable click-outside-to-close
-        // closeChat();
-      }
-    });
+    if (elements.input) {
+      elements.input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          handleSendMessage();
+        }
+      });
+    }
 
     // Escape key to close
     document.addEventListener('keydown', (e) => {
@@ -109,8 +119,12 @@
   // Open chat
   function openChat() {
     chatState.isOpen = true;
-    elements.chatRoot.classList.add('active');
-    elements.input.focus();
+    if (elements.chatRoot) {
+      elements.chatRoot.classList.add('active');
+    }
+    if (elements.input) {
+      elements.input.focus();
+    }
     
     // Hide launcher
     if (elements.launcher) {
@@ -121,7 +135,9 @@
   // Close chat
   function closeChat() {
     chatState.isOpen = false;
-    elements.chatRoot.classList.remove('active');
+    if (elements.chatRoot) {
+      elements.chatRoot.classList.remove('active');
+    }
     
     // Show launcher
     if (elements.launcher) {
@@ -138,6 +154,8 @@
 
   // Handle send message
   function handleSendMessage() {
+    if (!elements.input) return;
+    
     const message = elements.input.value.trim();
     if (!message || chatState.isTyping) return;
 
@@ -155,6 +173,8 @@
 
   // Add message to chat
   function addMessage(text, sender, isTyping = false) {
+    if (!elements.messages) return;
+
     const messageDiv = document.createElement('div');
     messageDiv.className = `message ${sender}${isTyping ? ' typing' : ''}`;
     
@@ -186,7 +206,9 @@
       'bot', 
       true
     );
-    typingDiv.id = 'typing-indicator';
+    if (typingDiv) {
+      typingDiv.id = 'typing-indicator';
+    }
   }
 
   // Hide typing indicator
@@ -204,7 +226,7 @@
     addMessage(response, 'bot');
   }
 
-  // Generate bot response (simple rule-based for now)
+  // Generate bot response
   function generateBotResponse(message) {
     const lowerMessage = message.toLowerCase();
     
@@ -252,20 +274,9 @@
 
   // Scroll to bottom of messages
   function scrollToBottom() {
-    elements.messages.scrollTop = elements.messages.scrollHeight;
-  }
-
-  // Utility functions
-  function debounce(func, wait) {
-    let timeout;
-    return function executedFunction(...args) {
-      const later = () => {
-        clearTimeout(timeout);
-        func(...args);
-      };
-      clearTimeout(timeout);
-      timeout = setTimeout(later, wait);
-    };
+    if (elements.messages) {
+      elements.messages.scrollTop = elements.messages.scrollHeight;
+    }
   }
 
   // Error handling
@@ -281,7 +292,7 @@
     initChat();
   }
 
-  // Expose public API (optional)
+  // Expose public API
   window.ChatWidget = {
     open: openChat,
     close: closeChat,
