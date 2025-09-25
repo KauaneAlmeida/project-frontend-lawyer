@@ -129,7 +129,13 @@
         method: 'POST',
         body: JSON.stringify({
           phone_number: phoneNumber,
-          metadata: metadata,
+          session_id: metadata.session_id,
+          user_data: metadata.user_data || {},
+          source: metadata.source || 'chat',
+          page: metadata.page || window.location.pathname,
+          timestamp: metadata.timestamp || new Date().toISOString(),
+          legal_area: metadata.legal_area || null,
+          service: metadata.service || null
         }),
       });
     }
@@ -182,6 +188,8 @@
     constructor(apiService) {
       this.apiService = apiService;
       this.isAuthorizing = false;
+      this.lastAuthAttempt = null;
+      this.authCooldown = 5000; // 5 seconds cooldown between attempts
     }
 
     async openWhatsApp(phoneNumber, metadata = {}) {
@@ -190,12 +198,29 @@
         return;
       }
 
+      // Prevent rapid successive calls
+      const now = Date.now();
+      if (this.lastAuthAttempt && (now - this.lastAuthAttempt) < this.authCooldown) {
+        console.log('WhatsApp authorization cooldown active');
+        return;
+      }
+
       this.isAuthorizing = true;
+      this.lastAuthAttempt = now;
 
       try {
         console.log('🔗 Authorizing WhatsApp session...', { phoneNumber, metadata });
         
-        const response = await this.apiService.authorizeWhatsApp(phoneNumber, metadata);
+        // Ensure we have a valid session ID
+        const sessionId = this.getValidSessionId();
+        if (!sessionId) {
+          throw new Error('No valid session ID available');
+        }
+
+        const response = await this.apiService.authorizeWhatsApp(phoneNumber, {
+          ...metadata,
+          session_id: sessionId
+        });
         
         if (response.whatsapp_url) {
           console.log('✅ WhatsApp URL received:', response.whatsapp_url);
@@ -206,10 +231,20 @@
         }
       } catch (error) {
         console.error('❌ WhatsApp authorization failed:', error);
-        this.showNotification('Erro ao conectar com WhatsApp. Tente novamente.');
+        this.showNotification('Erro ao conectar com WhatsApp. Tente novamente em alguns segundos.');
       } finally {
         this.isAuthorizing = false;
       }
+    }
+
+    getValidSessionId() {
+      // Try to get session ID from chatBot instance or session manager
+      if (window.chatBot && window.chatBot.sessionId) {
+        return window.chatBot.sessionId;
+      }
+      
+      const sessionManager = new SessionManager();
+      return sessionManager.getSessionId();
     }
 
     async checkAuthStatus(phoneNumber) {
@@ -250,6 +285,7 @@
       this.apiService = new ApiService();
       this.sessionManager = new SessionManager();
       this.whatsappIntegration = new WhatsAppIntegration(this.apiService);
+      this.hookedElements = new Set(); // Track hooked elements to prevent duplicates
       
       this.init();
     }
@@ -350,7 +386,8 @@
       const checkForElements = () => {
         // Hook into chat launcher (our custom element)
         const launcher = document.getElementById('chat-launcher');
-        if (launcher && !launcher.hasAttribute('data-hooked')) {
+        if (launcher && !this.hookedElements.has('chat-launcher')) {
+          this.hookedElements.add('chat-launcher');
           launcher.setAttribute('data-hooked', 'true');
           launcher.addEventListener('click', () => this.toggleChat());
         }
@@ -361,44 +398,57 @@
 
       // Check immediately and then periodically
       checkForElements();
-      setInterval(checkForElements, 1000);
+      this.elementCheckInterval = setInterval(checkForElements, 2000);
     }
 
     hookExistingWhatsAppButtons() {
       // Hook into React's floating WhatsApp button
-      const floatingButton = document.querySelector('[data-testid="floating-whatsapp-button"]');
-      if (floatingButton && !floatingButton.hasAttribute('data-hooked')) {
-        floatingButton.setAttribute('data-hooked', 'true');
+      const floatingButtons = document.querySelectorAll('[data-testid="floating-whatsapp-button"]');
+      
+      // Remove duplicates if they exist
+      if (floatingButtons.length > 1) {
+        console.log(`🔧 Removing ${floatingButtons.length - 1} duplicate WhatsApp buttons`);
+        for (let i = 1; i < floatingButtons.length; i++) {
+          floatingButtons[i].remove();
+        }
+      }
+      
+      const floatingButton = floatingButtons[0];
+      if (floatingButton && !this.hookedElements.has('floating-whatsapp-button')) {
+        this.hookedElements.add('floating-whatsapp-button');
         
-        // Clone to remove React event listeners
+        // Remove existing event listeners by cloning
         const newButton = floatingButton.cloneNode(true);
-        floatingButton.parentNode.replaceChild(newButton, floatingButton);
-        
-        newButton.addEventListener('click', (e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          this.handleWhatsAppFloatingButton();
-        });
-        
-        console.log('✅ Hooked into React WhatsApp floating button');
+        if (floatingButton.parentNode) {
+          floatingButton.parentNode.replaceChild(newButton, floatingButton);
+          
+          newButton.addEventListener('click', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            this.handleWhatsAppFloatingButton();
+          });
+          
+          console.log('✅ Hooked into React WhatsApp floating button');
+        }
       }
 
       // Hook into other WhatsApp buttons by text content
       const buttons = document.querySelectorAll('button, a');
       buttons.forEach(button => {
-        if (button.hasAttribute('data-hooked')) return;
+        const buttonId = button.id || button.textContent?.trim() || Math.random().toString(36);
+        if (this.hookedElements.has(buttonId)) return;
         
         const text = button.textContent?.toLowerCase() || '';
         
         if (text.includes('whatsapp 24h') || text.includes('whatsapp')) {
-          button.setAttribute('data-hooked', 'true');
+          this.hookedElements.add(buttonId);
           button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
             this.handleWhatsApp24h();
           });
         } else if (text.includes('falar com especialista') || text.includes('talk to specialist')) {
-          button.setAttribute('data-hooked', 'true');
+          this.hookedElements.add(buttonId);
           button.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
@@ -409,33 +459,57 @@
     }
 
     async handleWhatsAppFloatingButton() {
-      const phoneNumber = this.conversationState.userData.phone || '5511999999999';
+      // Ensure we have a session before attempting WhatsApp integration
+      if (!this.sessionId) {
+        await this.startInitialConversation();
+      }
+      
+      const phoneNumber = this.conversationState.userData.phone || this.getDefaultPhoneNumber();
       await this.whatsappIntegration.openWhatsApp(phoneNumber, {
         source: 'floating_button',
         page: window.location.pathname,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        user_data: this.conversationState.userData,
+        session_id: this.sessionId
       });
     }
 
     async handleWhatsApp24h() {
-      const phoneNumber = this.conversationState.userData.phone || '5511999999999';
+      if (!this.sessionId) {
+        await this.startInitialConversation();
+      }
+      
+      const phoneNumber = this.conversationState.userData.phone || this.getDefaultPhoneNumber();
       await this.whatsappIntegration.openWhatsApp(phoneNumber, {
         source: 'whatsapp_24h_button',
         service: '24h_support',
         page: window.location.pathname,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        user_data: this.conversationState.userData,
+        session_id: this.sessionId
       });
     }
 
     async handleTalkToSpecialist() {
-      const phoneNumber = this.conversationState.userData.phone || '5511999999999';
+      if (!this.sessionId) {
+        await this.startInitialConversation();
+      }
+      
+      const phoneNumber = this.conversationState.userData.phone || this.getDefaultPhoneNumber();
       await this.whatsappIntegration.openWhatsApp(phoneNumber, {
         source: 'specialist_button',
         service: 'specialist_consultation',
         legal_area: this.conversationState.userData.legal_area,
         page: window.location.pathname,
-        timestamp: new Date().toISOString()
+        timestamp: new Date().toISOString(),
+        user_data: this.conversationState.userData,
+        session_id: this.sessionId
       });
+    }
+
+    getDefaultPhoneNumber() {
+      // Return a default phone number - this should be configured based on your business
+      return '5511999999999'; // Replace with your actual WhatsApp business number
     }
 
     toggleChat() {
@@ -652,6 +726,14 @@
         return null;
       }
     }
+
+    // Cleanup method to prevent memory leaks
+    destroy() {
+      if (this.elementCheckInterval) {
+        clearInterval(this.elementCheckInterval);
+      }
+      this.hookedElements.clear();
+    }
   }
 
   /**
@@ -663,6 +745,11 @@
 
     console.log("🚀 Inicializando integração do chat...");
     
+    // Clean up any existing chat instance
+    if (window.chatBot && typeof window.chatBot.destroy === 'function') {
+      window.chatBot.destroy();
+    }
+    
     // Initialize ChatBot
     chatBot = new ChatBot();
     window.chatBot = chatBot;
@@ -673,13 +760,12 @@
   // Wait for DOM and React to be ready
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-      setTimeout(initChat, 1000); // Give React time to render
+      setTimeout(initChat, 1500); // Give React more time to render
     });
   } else {
-    setTimeout(initChat, 1000); // Give React time to render
+    setTimeout(initChat, 1500); // Give React more time to render
   }
 
-  // Safety: try to run after a few more seconds as well
-  setTimeout(initChat, 3000);
-  setTimeout(initChat, 5000);
+  // Safety: try to run after a few more seconds as well, but less frequently
+  setTimeout(initChat, 4000);
 })();
